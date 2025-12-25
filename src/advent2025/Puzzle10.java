@@ -15,6 +15,11 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -42,6 +47,7 @@ public class Puzzle10 {
         List<String> lines = r.readAllLines();
         List<Machine> machines = lines.stream().map(Machine::parse).toList();
         System.out.printf("For %s, part 1 solution is %d\n", name, part1(machines));
+        System.out.printf("For %s, part 2 solution is %d\n", name, part2(machines));
       }
     }
   }
@@ -49,12 +55,12 @@ public class Puzzle10 {
   private static int part1(List<Machine> machines) {
     int total = 0;
     for (Machine machine : machines) {
-      total += minPushesFor(machine);
+      total += minPart1PushesFor(machine);
     }
     return total;
   }
 
-  private static int minPushesFor(Machine machine) {
+  private static int minPart1PushesFor(Machine machine) {
     int nMasks = machine.buttonMasks.size();
     for (int pushes = 1; pushes <= nMasks; pushes++) {
       for (int i = 1; i < 1 << nMasks; i++) {
@@ -72,6 +78,118 @@ public class Puzzle10 {
       }
     }
     throw new IllegalStateException("No solution for " + machine);
+  }
+
+  private static int part2(List<Machine> machines) throws InterruptedException, ExecutionException {
+    int total = 0;
+    ExecutorService executor =
+        Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+    CompletionService<Response> service = new ExecutorCompletionService<>(executor);
+    for (int i = 0; i < machines.size(); i++) {
+      int ii = i;
+      Machine machine = machines.get(i);
+      service.submit(() -> run(machine, ii));
+    }
+    long startTime = System.nanoTime();
+    for (int remaining = machines.size(); remaining > 0; --remaining) {
+      var response = service.take().get();
+      int done = machines.size() - remaining + 1;
+      long elapsed = System.nanoTime() - startTime;
+      long perMachine = elapsed / done;
+      long eta = (remaining - 1) * perMachine;
+      total += response.bestPushes;
+      System.out.printf(
+          "...machine #%d solved in %.2fs to get %d, elapsed time %.0fs, %d remaining, ETA %.0fs\n",
+          response.machineIndex,
+          response.elapsed / 1e9,
+          response.bestPushes,
+          elapsed / 1e9,
+          remaining - 1,
+          eta / 1e9);
+    }
+    executor.shutdown();
+    return total;
+  }
+
+  private record Response(int machineIndex, int bestPushes, long elapsed) {}
+
+  private static Response run(Machine machine, int machineIndex) {
+    long startTime = System.nanoTime();
+    int bestPushes = minPart2PushesFor(machine);
+    long elapsed = System.nanoTime() - startTime;
+    return new Response(machineIndex, bestPushes, elapsed);
+  }
+
+  private static int minPart2PushesFor(Machine machine) {
+    int[] joltages = machine.joltages.stream().mapToInt(i -> i).toArray();
+    // Sort the button masks so the ones that increment the most joltages come first.
+    int[] buttonMasks =
+        machine.buttonMasks.stream()
+            .sorted((a, b) -> Integer.compare(Integer.bitCount(b), Integer.bitCount(a)))
+            .mapToInt(i -> i)
+            .toArray();
+    return solve(buttonMasks, 0, 0, Integer.MAX_VALUE, joltages);
+  }
+
+  private static int solve(
+      int[] buttonMasks, int buttonIndex, int pushesSoFar, int bestPushes, int[] joltages) {
+    if (pushesSoFar >= bestPushes) {
+      return bestPushes;
+    }
+    if (allZero(joltages)) {
+      return pushesSoFar;
+    }
+    if (buttonIndex >= buttonMasks.length
+        || nonZeroJoltagesNotCoveredByRemainingButtons(buttonMasks, buttonIndex, joltages)) {
+      return bestPushes;
+    }
+    // Determine how many times buttonIndex can be pushed without sending any joltages below zero.
+    // This is simply the smallest value of any joltage that is affected by the button.
+    int max = Integer.MAX_VALUE;
+    for (int mask = buttonMasks[buttonIndex]; mask != 0; mask &= ~Integer.lowestOneBit(mask)) {
+      int j = Integer.numberOfTrailingZeros(mask);
+      max = Math.min(max, joltages[j]);
+      if (max == 0) {
+        break;
+      }
+    }
+    for (int p = Math.min(max, bestPushes - pushesSoFar); p >= 0; --p) {
+      int[] newJoltages;
+      if (p == 0) {
+        newJoltages = joltages;
+      } else {
+        newJoltages = joltages.clone();
+        for (int mask = buttonMasks[buttonIndex]; mask != 0; mask &= ~Integer.lowestOneBit(mask)) {
+          int j = Integer.numberOfTrailingZeros(mask);
+          newJoltages[j] -= p;
+        }
+      }
+      bestPushes = solve(buttonMasks, buttonIndex + 1, pushesSoFar + p, bestPushes, newJoltages);
+    }
+    return bestPushes;
+  }
+
+  private static boolean nonZeroJoltagesNotCoveredByRemainingButtons(
+      int[] buttonMasks, int buttonIndex, int[] joltages) {
+    int mask = 0;
+    for (int i = buttonIndex; i < buttonMasks.length; i++) {
+      mask |= buttonMasks[i];
+    }
+    for (int i = 0; i < joltages.length; i++) {
+      if (joltages[i] != 0 && (mask & (1 << i)) == 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean allZero(int[] joltages) {
+    for (int i : joltages) {
+      if (i != 0) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private record Machine(
