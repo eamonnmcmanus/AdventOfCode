@@ -88,24 +88,20 @@ public class Puzzle10 {
     for (int i = 0; i < machines.size(); i++) {
       int ii = i;
       Machine machine = machines.get(i);
-      service.submit(() -> run(machine, ii));
+      service.submit(new Solver(machine, ii));
     }
     long startTime = System.nanoTime();
     for (int remaining = machines.size(); remaining > 0; --remaining) {
       var response = service.take().get();
-      int done = machines.size() - remaining + 1;
       long elapsed = System.nanoTime() - startTime;
-      long perMachine = elapsed / done;
-      long eta = (remaining - 1) * perMachine;
       total += response.bestPushes;
       System.out.printf(
-          "...machine #%d solved in %.2fs to get %d, elapsed time %.0fs, %d remaining, ETA %.0fs\n",
+          "...machine #%d solved in %.2fs to get %d, elapsed time %.0fs, %d remaining\n",
           response.machineIndex,
           response.elapsed / 1e9,
           response.bestPushes,
           elapsed / 1e9,
-          remaining - 1,
-          eta / 1e9);
+          remaining - 1);
     }
     executor.shutdown();
     return total;
@@ -113,83 +109,112 @@ public class Puzzle10 {
 
   private record Response(int machineIndex, int bestPushes, long elapsed) {}
 
-  private static Response run(Machine machine, int machineIndex) {
-    long startTime = System.nanoTime();
-    int bestPushes = minPart2PushesFor(machine);
-    long elapsed = System.nanoTime() - startTime;
-    return new Response(machineIndex, bestPushes, elapsed);
-  }
+  private static class Solver implements Callable<Response> {
+    private final Machine machine;
+    private final int machineIndex;
+    private final long startTime;
+    private final int[] buttonMasks;
 
-  private static int minPart2PushesFor(Machine machine) {
-    int[] joltages = machine.joltages.stream().mapToInt(i -> i).toArray();
-    // Sort the button masks so the ones that increment the most joltages come first.
-    int[] buttonMasks =
-        machine.buttonMasks.stream()
-            .sorted((a, b) -> Integer.compare(Integer.bitCount(b), Integer.bitCount(a)))
-            .mapToInt(i -> i)
-            .toArray();
-    return solve(buttonMasks, 0, 0, Integer.MAX_VALUE, joltages);
-  }
+    Solver(Machine machine, int machineIndex) {
+      this.machine = machine;
+      this.machineIndex = machineIndex;
+      this.startTime = System.nanoTime();
+      // Sort the button masks so the ones that increment the most joltages come first.
+      this.buttonMasks =
+          machine.buttonMasks.stream()
+              .sorted((a, b) -> Integer.compare(Integer.bitCount(b), Integer.bitCount(a)))
+              .mapToInt(i -> i)
+              .toArray();
+    }
 
-  private static int solve(
-      int[] buttonMasks, int buttonIndex, int pushesSoFar, int bestPushes, int[] joltages) {
-    if (pushesSoFar >= bestPushes) {
-      return bestPushes;
+    @Override
+    public Response call() throws Exception {
+      int bestPushes = minPart2PushesFor(machine);
+      long elapsed = System.nanoTime() - startTime;
+      return new Response(machineIndex, bestPushes, elapsed);
     }
-    if (allZero(joltages)) {
-      return pushesSoFar;
+
+    private int minPart2PushesFor(Machine machine) {
+      int[] joltages = machine.joltages.stream().mapToInt(i -> i).toArray();
+      return solve(0, 0, Integer.MAX_VALUE, joltages);
     }
-    if (buttonIndex >= buttonMasks.length
-        || nonZeroJoltagesNotCoveredByRemainingButtons(buttonMasks, buttonIndex, joltages)) {
-      return bestPushes;
-    }
-    // Determine how many times buttonIndex can be pushed without sending any joltages below zero.
-    // This is simply the smallest value of any joltage that is affected by the button.
-    int max = Integer.MAX_VALUE;
-    for (int mask = buttonMasks[buttonIndex]; mask != 0; mask &= ~Integer.lowestOneBit(mask)) {
-      int j = Integer.numberOfTrailingZeros(mask);
-      max = Math.min(max, joltages[j]);
-      if (max == 0) {
-        break;
+
+    private int solve(int buttonIndex, int pushesSoFar, int bestPushes, int[] joltages) {
+      if (pushesSoFar >= bestPushes) {
+        return bestPushes;
       }
-    }
-    for (int p = Math.min(max, bestPushes - pushesSoFar); p >= 0; --p) {
-      int[] newJoltages;
-      if (p == 0) {
-        newJoltages = joltages;
-      } else {
-        newJoltages = joltages.clone();
-        for (int mask = buttonMasks[buttonIndex]; mask != 0; mask &= ~Integer.lowestOneBit(mask)) {
-          int j = Integer.numberOfTrailingZeros(mask);
-          newJoltages[j] -= p;
+      if (allZero(joltages)) {
+        return pushesSoFar;
+      }
+      if (buttonIndex >= buttonMasks.length
+          || cannotImprove(buttonIndex, joltages, bestPushes - pushesSoFar)) {
+        return bestPushes;
+      }
+      // Determine how many times buttonIndex can be pushed without sending any joltages below zero.
+      // This is simply the smallest value of any joltage that is affected by the button.
+      int max = Integer.MAX_VALUE;
+      for (int mask = buttonMasks[buttonIndex]; mask != 0; mask &= ~Integer.lowestOneBit(mask)) {
+        int j = Integer.numberOfTrailingZeros(mask);
+        max = Math.min(max, joltages[j]);
+        if (max == 0) {
+          break;
         }
       }
-      bestPushes = solve(buttonMasks, buttonIndex + 1, pushesSoFar + p, bestPushes, newJoltages);
-    }
-    return bestPushes;
-  }
-
-  private static boolean nonZeroJoltagesNotCoveredByRemainingButtons(
-      int[] buttonMasks, int buttonIndex, int[] joltages) {
-    int mask = 0;
-    for (int i = buttonIndex; i < buttonMasks.length; i++) {
-      mask |= buttonMasks[i];
-    }
-    for (int i = 0; i < joltages.length; i++) {
-      if (joltages[i] != 0 && (mask & (1 << i)) == 0) {
-        return true;
+      for (int p = Math.min(max, bestPushes - pushesSoFar); p >= 0; --p) {
+        if (buttonIndex == 0) {
+          long elapsed = System.nanoTime() - startTime;
+          if (elapsed > 600_000_000_000L) {
+            System.out.printf(
+                ".....machine #%d still running after %.0fs, level 0 iterations remaining: %d\n",
+                machineIndex, elapsed / 1e9, p + 1);
+          }
+        }
+        int[] newJoltages;
+        if (p == 0) {
+          newJoltages = joltages;
+        } else {
+          newJoltages = joltages.clone();
+          for (int mask = buttonMasks[buttonIndex];
+              mask != 0;
+              mask &= ~Integer.lowestOneBit(mask)) {
+            int j = Integer.numberOfTrailingZeros(mask);
+            newJoltages[j] -= p;
+          }
+        }
+        bestPushes = solve(buttonIndex + 1, pushesSoFar + p, bestPushes, newJoltages);
       }
+      return bestPushes;
     }
-    return false;
-  }
 
-  private static boolean allZero(int[] joltages) {
-    for (int i : joltages) {
-      if (i != 0) {
-        return false;
+    private boolean cannotImprove(int buttonIndex, int[] joltages, int remainingPushes) {
+      // We can stop searching on this path if:
+      // (1) there is a non-zero joltage which is not affected by any remaining button; or
+      // (2) there is a joltage that would require more button pushes than the best number of button
+      //     pushes we have already seen on another path.
+      int mask = 0;
+      for (int i = buttonIndex; i < buttonMasks.length; i++) {
+        mask |= buttonMasks[i];
       }
+      for (int i = 0; i < joltages.length; i++) {
+        int j = joltages[i];
+        if (j != 0 && (mask & (1 << i)) == 0) {
+          return true;
+        }
+        if (j >= remainingPushes) {
+          return true;
+        }
+      }
+      return false;
     }
-    return true;
+
+    private static boolean allZero(int[] joltages) {
+      for (int i : joltages) {
+        if (i != 0) {
+          return false;
+        }
+      }
+      return true;
+    }
   }
 
   private record Machine(
