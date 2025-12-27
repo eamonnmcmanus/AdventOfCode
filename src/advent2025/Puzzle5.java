@@ -1,11 +1,9 @@
 package advent2025;
 
 import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.ImmutableRangeSet.toImmutableRangeSet;
 
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableRangeSet;
 import com.google.common.collect.Range;
 import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeSet;
@@ -38,7 +36,7 @@ public class Puzzle5 {
   private static final Map<String, Callable<Reader>> INPUT_PRODUCERS =
       ImmutableMap.of(
           "sample", () -> new StringReader(SAMPLE),
-          "problem", () -> new InputStreamReader(Puzzle1.class.getResourceAsStream("puzzle5.txt")));
+          "problem", () -> new InputStreamReader(Puzzle5.class.getResourceAsStream("puzzle5.txt")));
 
   public static void main(String[] args) throws Exception {
     for (var entry : INPUT_PRODUCERS.entrySet()) {

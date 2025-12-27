@@ -38,7 +38,7 @@ public class Puzzle10 {
       ImmutableMap.of(
           "sample", () -> new StringReader(SAMPLE),
           "problem",
-              () -> new InputStreamReader(Puzzle1.class.getResourceAsStream("puzzle10.txt")));
+              () -> new InputStreamReader(Puzzle10.class.getResourceAsStream("puzzle10.txt")));
 
   public static void main(String[] args) throws Exception {
     for (var entry : INPUT_PRODUCERS.entrySet()) {

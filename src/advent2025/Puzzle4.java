@@ -33,7 +33,7 @@ public class Puzzle4 {
   private static final Map<String, Callable<Reader>> INPUT_PRODUCERS =
       ImmutableMap.of(
           "sample", () -> new StringReader(SAMPLE),
-          "problem", () -> new InputStreamReader(Puzzle1.class.getResourceAsStream("puzzle4.txt")));
+          "problem", () -> new InputStreamReader(Puzzle4.class.getResourceAsStream("puzzle4.txt")));
 
   public static void main(String[] args) throws Exception {
     for (var entry : INPUT_PRODUCERS.entrySet()) {

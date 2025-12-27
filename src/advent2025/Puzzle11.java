@@ -53,7 +53,7 @@ public class Puzzle11 {
       """;
 
   private static Reader problemReader() {
-    return new InputStreamReader(Puzzle1.class.getResourceAsStream("puzzle11.txt"));
+    return new InputStreamReader(Puzzle11.class.getResourceAsStream("puzzle11.txt"));
   }
 
   private static final Map<String, Callable<Reader>> PART1_INPUT_PRODUCERS =
